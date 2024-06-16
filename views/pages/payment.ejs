@@ -63,9 +63,9 @@
                             <div class="limit-box">
                                 <nav class="main-menu">
                                     <ul class="menu-area-main">
-                                        <li class="active"> <a href="index">Home</a> </li>
-                                        <li> <a href="about">About</a> </li>
-                                        <li><a href="brand">Brand</a></li>
+                                        <li class="active"> <a href="index.html">Home</a> </li>
+                                        <li> <a href="about.html">About</a> </li>
+                                        <li><a href="brand.html">Brand</a></li>
                                         <li><a href="special.html">Specials</a></li>
                                         <li><a href="contact.html">Contact Us</a></li>
                                         <li class="last">
@@ -91,85 +91,18 @@
         <!-- end header inner -->
     </header>
     <!-- end header -->
-  <section class="cart container mt-2 my-3 py-5">
-    <div class="container mt-2">
-      <h4>Cart</h4>
-    </div>
 
-    <table class="table" style="width:100%">
-      <tr>
-        <th>Product</th>
-        <th>Quantity</th>
-        <th>Subtotal</th>
-      </tr>
+    <section class="container mt-2 my-3 py-5">
+        <div class="container mt-2 text-center">
+            <h4>Payment</h4>
+            <h2>Total: $ <%= total %>
+            <div id="paypal-button-container"></div>
+             <p id="result-message"></p>
+        </div>
 
-      <% if (cart.length > 0) { %>
-        <% cart.forEach(function(item) { %>
-        <tr>
-          <td>
-            <div class="product-info">
-              <img src="images/<%= item.image %>">
-              <div>
-                <p><%= item.name %></p>
-                <% if (item.sale_price) { %>
-                  <small><span>$</span><%= item.sale_price %></small>
-                <% } else { %>
-                  <small><span>$</span><%= item.price %></small>
-                <% } %>
-                <br>
-                <form method="post" action="/remove_product">
-                  <input type="hidden" name="id" value="<%= item.id %>">
-                  <input type="submit" name="remove_btn" class="remove-btn" value="remove">
-                </form>
-              </div>
-            </div>
-          </td>
-          <td>
-            <form method="post" action="/edit_product_quantity">
-              <input type="hidden" name="id" value="<%= item.id %>">
-              <input type="submit" name="decrease_product_quantity" class="edit-btn" value="-">
-              <input type="text" name="quantity" value="<%= item.quantity %>" readonly>
-              <input type="submit" name="increase_product_quantity" class="edit-btn" value="+">
-            </form>
-          </td>
-          <td>
-            <% if (item.sale_price) { %>
-              <span class="product-price">$ <%= item.sale_price * item.quantity %></span>
-            <% } else { %>
-              <span class="product-price">$ <%= item.price * item.quantity %></span>
-            <% } %>
-          </td>
-        </tr>
-        <% }) %>
-      <% } else { %>
-        <tr>
-          <td colspan="3">Your cart is empty</td>
-        </tr>
-      <% } %>
-    </table>
+    </section>
 
-    <div class="cart-total">
-      <table class="table" style="width:50%">
-        <tr>
-          <th>Total</th>
-          <th>Amount</th>
-        </tr>
-        <tr>
-          <td>Total:
-          <td>$<%= total %></td>
-        </tr>
-      </table>
-    </div>
 
-    <div class="checkout-container mt-2 my-2 py-2">
-        <form method="get" action="/checkout">
-            <input type="submit" class="btn btn-primary float-right" value="checkout" name="">
-        </form>
-        <form>
-            <input type="submit" class="btn btn-danger float-left" value="Clear Cart" name="">
-        </form>
-    </div>
-  </section>
 
     <!-- footer -->
     <footer>
@@ -213,6 +146,80 @@
     </footer>
     <!-- end footer -->
     <!-- Javascript files-->
+    <script
+      src="https://www.paypal.com/sdk/js?client-id=AXvwnvlLdf63k5_udGOyecUR-LwqN4l8ZqsVTqFzMv6lf6j_4JfDTjX14fUMiI1JlCXTbP-l-ORt3hZj&buyer- 
+      country=US&currency=USD&components=buttons&enable-funding=venmo"
+      data-sdk-integration-source="developer-studio"
+    ></script>
+
+    <script>
+        function resultMessage(message) {
+            document.getElementById('result-message').innerHTML = message;
+        }
+
+        paypal.Buttons({
+            style: {
+                shape: "rect",
+                layout: "vertical",
+                color: "gold",
+                label: "paypal",
+            },
+            async createOrder(data, actions) {
+                try {
+                    const response = await fetch('/payment/create-order', {
+                        method: 'post',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ cart: <%= JSON.stringify(cart) %> }),
+                    });
+
+                    const orderData = await response.json();
+                    if (orderData.id) {
+                        return orderData.id;
+                    }
+
+                    const errorDetail = orderData?.details?.[0];
+                    const errorMessage = errorDetail ? `${errorDetail.issue} ${errorDetail.description} (${orderData.debug_id})` : JSON.stringify(orderData);
+                    throw new Error(errorMessage);
+                } catch (error) {
+                    console.error(error);
+                    resultMessage(`Could not initiate PayPal Checkout...<br><br>${error}`);
+                }
+            },
+            async onApprove(data, actions) {
+                try {
+                    const response = await fetch(`/payment/capture-order/${data.orderID}`, {
+                        method: 'post',
+                        headers: { 'content-type': 'application/json' },
+                    });
+                    const orderData = await response.json();
+
+                    const errorDetail = orderData?.details?.[0];
+                    if (errorDetail?.issue === "INSTRUMENT_DECLINED") {
+                        return actions.restart();
+                    } else if (errorDetail) {
+                        throw new Error(`${errorDetail.description} (${orderData.debug_id})`);
+                    } else if (!orderData.purchase_units) {
+                        throw new Error(JSON.stringify(orderData));
+                    } else {
+                        const transaction = orderData?.purchase_units?.[0]?.payments?.captures?.[0] || orderData?.purchase_units?.[0]?.payments?.authorizations?.[0];
+                        resultMessage(`Transaction ${transaction.status}: ${transaction.id}<br><br>See console for all available details`);
+                        console.log("Capture result", orderData, JSON.stringify(orderData, null, 2));
+                    }
+                } catch (error) {
+                    console.error(error);
+                    resultMessage(`Sorry, your transaction could not be processed...<br><br>${error}`);
+                }
+            },
+            onCancel: (data) => {
+                alert('Payment Cancelled!');
+            },
+            onError: (err) => {
+                console.error(err);
+                alert('An error occurred during the payment process.');
+            }
+        }).render('#paypal-button-container');
+    </script>
+    
     <script src="js/jquery.min.js"></script>
     <script src="js/popper.min.js"></script>
     <script src="js/bootstrap.bundle.min.js"></script>
